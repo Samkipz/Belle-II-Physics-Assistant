@@ -191,18 +191,17 @@ def load_rag_system():
         metadatas = [{"answer": ans} for ans in answers]
         ids = [f"qa_{i}" for i in range(len(qa_pairs))]
 
-        # Generate embeddings
-        embeddings = embed_model.encode(questions, convert_to_numpy=True)
-
-        # Store in Chroma
+        # Store in Chroma (only if collection is empty)
         client = chromadb.Client(Settings(persist_directory=CHROMA_DB_DIR))
         collection = client.get_or_create_collection(CHROMA_COLLECTION_NAME)
-        collection.add(
-            embeddings=embeddings,
-            documents=questions,
-            metadatas=metadatas,
-            ids=ids
-        )
+        if collection.count() == 0:
+            embeddings = embed_model.encode(questions, convert_to_numpy=True)
+            collection.add(
+                embeddings=embeddings,
+                documents=questions,
+                metadatas=metadatas,
+                ids=ids
+            )
 
         return collection, embed_model, len(qa_pairs)
 

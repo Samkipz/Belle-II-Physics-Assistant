@@ -10,7 +10,7 @@ Usage:
     python setup_professional.py
 
 Requirements:
-    - 57 PDF documents in a 'documents' folder
+    - 50+ PDF documents in a 'documents' folder
     - Hugging Face API key set as environment variable HF_API_KEY
     - Sufficient disk space for embeddings and processed data
 """
@@ -21,6 +21,8 @@ import subprocess
 import time
 from pathlib import Path
 import json
+
+CHROMA_DB_DIR = os.path.abspath("chroma_db")
 
 
 def check_requirements():
@@ -125,7 +127,8 @@ def setup_rag_system():
     try:
         from advanced_rag_system import AdvancedRAGSystem
 
-        rag_system = AdvancedRAGSystem()
+        rag_system = AdvancedRAGSystem(
+            chroma_db_dir=CHROMA_DB_DIR, collection_name="belle2_advanced")
         rag_system.ingest_documents("belle2_processed_chunks.jsonl")
         stats = rag_system.get_system_stats()
 

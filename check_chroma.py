@@ -3,13 +3,14 @@ from chromadb.config import Settings
 import os
 
 # Configurations
-CHROMA_COLLECTION_NAME = "belle2_qa"
-CHROMA_DB_DIR = os.path.abspath("./chroma_db")  # Use absolute path
+CHROMA_COLLECTION_NAME = "belle2_advanced"
+CHROMA_DB_DIR = os.path.abspath("chroma_db")
 
 
 def check_chroma():
     print("Checking ChromaDB Status")
     print("=" * 50)
+    print(f"[DEBUG] Checking ChromaDB directory: {CHROMA_DB_DIR}")
 
     try:
         # Initialize client
@@ -49,4 +50,26 @@ def check_chroma():
 
 
 if __name__ == "__main__":
+    # Scan for all chroma_db directories under the workspace root
+    import glob
+    workspace_root = os.path.dirname(os.path.abspath(__file__))
+    print(
+        "\n[SCAN] Searching for all 'chroma_db' directories under the workspace root...")
+    for dirpath, dirnames, filenames in os.walk(workspace_root):
+        if 'chroma_db' in dirnames:
+            chroma_path = os.path.join(dirpath, 'chroma_db')
+            print(f"\n[SCAN] Found: {chroma_path}")
+            try:
+                client = chromadb.Client(
+                    Settings(persist_directory=chroma_path))
+                collections = client.list_collections()
+                print(f"  Collections: {[col.name for col in collections]}")
+                for col in collections:
+                    collection = client.get_collection(col.name)
+                    print(
+                        f"    Collection '{col.name}' has {collection.count()} documents.")
+            except Exception as e:
+                print(f"  [ERROR] Could not read collections: {e}")
+    print("\n[SCAN] Done.")
+    # Also run the original check
     check_chroma()

@@ -1,6 +1,6 @@
 # Core RAG and AI dependencies
 streamlit>=1.28.0
-chromadb>=0.4.0
+pinecone>=2.2.0
 sentence-transformers>=2.2.0
 requests>=2.31.0
 numpy>=1.24.0

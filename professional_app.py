@@ -210,7 +210,9 @@ def load_rag_system():
     """Load and initialize the advanced RAG system"""
     with st.spinner("🔬 Loading Belle II Professional Knowledge Base..."):
         try:
-            rag_system = AdvancedRAGSystem()
+            CHROMA_DB_DIR = r"C:/Users/Sam/Desktop/Wrt/Random/codezn/cdzn/chroma_db"
+            rag_system = AdvancedRAGSystem(
+                chroma_db_dir=CHROMA_DB_DIR, collection_name="belle2_advanced")
             return rag_system
         except Exception as e:
             st.error(f"Failed to load RAG system: {e}")

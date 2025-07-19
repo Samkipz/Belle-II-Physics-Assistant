@@ -9,8 +9,8 @@
     "Confidence scoring",
     "Content type analysis"
   ],
-  "document_count": 53,
+  "document_count": 3,
   "embedding_model": "BAAI/bge-large-en-v1.5",
   "default_model": "mistralai/Mistral-7B-Instruct-v0.3",
-  "setup_date": "2025-07-19 17:04:25"
+  "setup_date": "2025-07-20 00:23:11"
 }
