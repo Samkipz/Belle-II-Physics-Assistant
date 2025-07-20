@@ -256,10 +256,167 @@ class AdvancedRAGSystem:
         return combined_results
 
     def _multi_vector_retrieval(self, query: str, top_k: int, chunk_type_filter: str = None, document_filter: str = None) -> List[RetrievalResult]:
-        """Multi-vector retrieval using different embedding strategies"""
-        # This would implement more sophisticated multi-vector retrieval
-        # For now, return semantic retrieval
-        return self._semantic_retrieval(query, top_k, chunk_type_filter, document_filter)
+        """Multi-vector retrieval using different embedding strategies and query expansion"""
+
+        # Strategy 1: Original query embedding
+        original_results = self._semantic_retrieval(
+            query, top_k * 2, chunk_type_filter, document_filter)
+
+        # Strategy 2: Query expansion with synonyms and related terms
+        expanded_query = self._expand_query(query)
+        expanded_results = self._semantic_retrieval(
+            expanded_query, top_k * 2, chunk_type_filter, document_filter)
+
+        # Strategy 3: Chunk-type specific retrieval
+        type_specific_results = self._chunk_type_specific_retrieval(
+            query, top_k, chunk_type_filter, document_filter)
+
+        # Combine all strategies with sophisticated reranking
+        all_results = original_results + expanded_results + type_specific_results
+
+        # Remove duplicates and rerank
+        unique_results = self._deduplicate_and_rerank(all_results, top_k)
+
+        return unique_results
+
+    def _expand_query(self, query: str) -> str:
+        """Expand query with synonyms and related terms for physics concepts"""
+
+        # Physics-specific query expansion
+        physics_terms = {
+            "luminosity": ["integrated luminosity", "instantaneous luminosity", "beam luminosity"],
+            "detector": ["detection system", "measurement apparatus", "sensor"],
+            "background": ["background processes", "noise", "interference"],
+            "efficiency": ["detection efficiency", "reconstruction efficiency", "selection efficiency"],
+            "resolution": ["energy resolution", "momentum resolution", "spatial resolution"],
+            "calibration": ["calibration procedure", "calibration method", "calibration system"],
+            "trigger": ["trigger system", "trigger logic", "trigger efficiency"],
+            "reconstruction": ["particle reconstruction", "track reconstruction", "event reconstruction"],
+            "selection": ["event selection", "particle selection", "cut selection"],
+            "systematic": ["systematic uncertainty", "systematic error", "systematic effect"]
+        }
+
+        expanded_terms = []
+        query_lower = query.lower()
+
+        for term, synonyms in physics_terms.items():
+            if term in query_lower:
+                expanded_terms.extend(synonyms)
+
+        # Add original query terms
+        expanded_terms.extend(query.split())
+
+        # Create expanded query (limit to avoid too long queries)
+        expanded_query = " ".join(list(set(expanded_terms))[:10])
+
+        return expanded_query if expanded_query != query else query
+
+    def _chunk_type_specific_retrieval(self, query: str, top_k: int, chunk_type_filter: str = None, document_filter: str = None) -> List[RetrievalResult]:
+        """Retrieve results optimized for different chunk types"""
+
+        results = []
+
+        # If no specific chunk type filter, try to optimize for different types
+        if not chunk_type_filter:
+            chunk_types = ["text", "table", "equation", "figure"]
+
+            for chunk_type in chunk_types:
+                # Adjust query for specific chunk types
+                adjusted_query = self._adjust_query_for_chunk_type(
+                    query, chunk_type)
+
+                type_results = self._semantic_retrieval(
+                    adjusted_query, top_k // 2, chunk_type, document_filter)
+                results.extend(type_results)
+        else:
+            # Use the specified chunk type filter
+            adjusted_query = self._adjust_query_for_chunk_type(
+                query, chunk_type_filter)
+            results = self._semantic_retrieval(
+                adjusted_query, top_k, chunk_type_filter, document_filter)
+
+        return results
+
+    def _adjust_query_for_chunk_type(self, query: str, chunk_type: str) -> str:
+        """Adjust query to be more suitable for specific chunk types"""
+
+        if chunk_type == "table":
+            # Add terms that suggest tabular data
+            table_indicators = ["table", "data", "values",
+                                "numbers", "statistics", "measurements"]
+            return f"{query} {' '.join(table_indicators)}"
+
+        elif chunk_type == "equation":
+            # Add terms that suggest mathematical content
+            equation_indicators = ["equation", "formula",
+                                   "calculation", "mathematical", "theoretical"]
+            return f"{query} {' '.join(equation_indicators)}"
+
+        elif chunk_type == "figure":
+            # Add terms that suggest visual content
+            figure_indicators = ["figure", "plot",
+                                 "graph", "diagram", "visualization", "image"]
+            return f"{query} {' '.join(figure_indicators)}"
+
+        else:  # text
+            return query
+
+    def _deduplicate_and_rerank(self, results: List[RetrievalResult], top_k: int) -> List[RetrievalResult]:
+        """Remove duplicates and rerank results using multiple factors"""
+
+        # Group by chunk_id to remove duplicates
+        unique_results = {}
+        for result in results:
+            if result.chunk_id not in unique_results:
+                unique_results[result.chunk_id] = result
+            else:
+                # Keep the one with higher similarity score
+                if result.similarity_score > unique_results[result.chunk_id].similarity_score:
+                    unique_results[result.chunk_id] = result
+
+        # Convert back to list and calculate enhanced scores
+        enhanced_results = []
+        for result in unique_results.values():
+            # Calculate enhanced score based on multiple factors
+            enhanced_score = self._calculate_enhanced_score(result)
+            enhanced_results.append((result, enhanced_score))
+
+        # Sort by enhanced score
+        enhanced_results.sort(key=lambda x: x[1], reverse=True)
+
+        return [result for result, _ in enhanced_results[:top_k]]
+
+    def _calculate_enhanced_score(self, result: RetrievalResult) -> float:
+        """Calculate enhanced score based on multiple factors"""
+
+        base_score = result.similarity_score
+
+        # Factor 1: Content length (prefer longer, more detailed content)
+        length_factor = min(len(result.content) / 1000,
+                            1.0)  # Normalize to 0-1
+
+        # Factor 2: Chunk type preference (prefer text and equations for physics)
+        type_weights = {
+            "text": 1.0,
+            "equation": 0.9,
+            "table": 0.8,
+            "figure": 0.7
+        }
+        type_factor = type_weights.get(result.chunk_type, 0.5)
+
+        # Factor 3: Document diversity (prefer results from different documents)
+        # This would require tracking document distribution, simplified for now
+        diversity_factor = 1.0
+
+        # Combine factors with weights
+        enhanced_score = (
+            base_score * 0.6 +
+            length_factor * 0.2 +
+            type_factor * 0.15 +
+            diversity_factor * 0.05
+        )
+
+        return enhanced_score
 
     def _keyword_retrieval(self, query: str, top_k: int, chunk_type_filter: str = None, document_filter: str = None) -> List[RetrievalResult]:
         """Simple keyword-based retrieval using Pinecone's sparse vectors"""
@@ -512,7 +669,8 @@ Please provide a comprehensive, accurate answer based on the context above:"""
             # Analyze chunk types from a sample query
             try:
                 sample_results = self.index.query(
-                    vector=[0] * 1024,  # Fixed: Use 1024 dimensions for BAAI/bge-large-en-v1.5
+                    # Fixed: Use 1024 dimensions for BAAI/bge-large-en-v1.5
+                    vector=[0] * 1024,
                     top_k=1000,
                     include_metadata=True
                 )
@@ -523,7 +681,8 @@ Please provide a comprehensive, accurate answer based on the context above:"""
                 for match in sample_results.matches:
                     metadata = match.metadata
                     chunk_type = metadata.get('chunk_type', 'unknown')
-                    chunk_types[chunk_type] = chunk_types.get(chunk_type, 0) + 1
+                    chunk_types[chunk_type] = chunk_types.get(
+                        chunk_type, 0) + 1
                     documents.add(metadata.get('document', 'unknown'))
 
                 return {

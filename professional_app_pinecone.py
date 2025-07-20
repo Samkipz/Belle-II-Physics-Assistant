@@ -11,10 +11,13 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 
+# Import the ModelType enum from the RAG system
+from advanced_rag_system_pinecone import ModelType
+
 # Page configuration
 st.set_page_config(
     page_title="Belle II Professional Physics Assistant",
-    page_icon="��",
+    page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -143,38 +146,43 @@ def main():
     with st.sidebar:
         st.markdown("### ⚙️ Configuration")
 
-        # Model selection
+        # Model selection with proper mapping to ModelType enum
         model_options = {
-            "Mistral-7B": "mistralai/Mistral-7B-Instruct-v0.3",
-            "Llama-2-7B": "meta-llama/Llama-2-7b-chat-hf",
-            "Vicuna-7B": "lmsys/vicuna-7b-v1.5"
+            "Mistral-7B": ModelType.MISTRAL_7B,
+            "Llama-2-7B": ModelType.LLAMA_2,
+            "Vicuna-7B": ModelType.VICUNA
         }
-        selected_model = st.selectbox(
+        selected_model_name = st.selectbox(
             "Select Model",
             list(model_options.keys()),
-            index=0
+            index=0,
+            help="Choose the language model for answer generation"
         )
+        selected_model = model_options[selected_model_name]
 
         # Retrieval strategy
         strategy_options = ["hybrid", "semantic", "multi_vector"]
         selected_strategy = st.selectbox(
             "Retrieval Strategy",
             strategy_options,
-            index=0
+            index=0,
+            help="Hybrid: Combines semantic and keyword search\nSemantic: Pure embedding-based search\nMulti-vector: Advanced multi-vector retrieval"
         )
 
         # Number of results
         top_k = st.slider("Number of Results (top_k)", 1, 20, 5)
 
         # Temperature
-        temperature = st.slider("Temperature", 0.0, 1.0, 0.1, 0.1)
+        temperature = st.slider("Temperature", 0.0, 1.0, 0.1, 0.1,
+                                help="Higher values make responses more creative, lower values more focused")
 
         # Filters
         st.markdown("### 🔍 Filters")
         chunk_type_filter = st.selectbox(
             "Chunk Type Filter",
             ["All", "text", "table", "equation", "figure"],
-            index=0
+            index=0,
+            help="Filter results by content type"
         )
         chunk_type_filter = None if chunk_type_filter == "All" else chunk_type_filter
 
@@ -203,6 +211,10 @@ def main():
     with col1:
         st.markdown("### 💬 Chat Interface")
 
+        # Display current configuration
+        st.info(
+            f"🤖 **Model**: {selected_model_name} | 🔍 **Strategy**: {selected_strategy} | 📊 **Results**: {top_k} | 🌡️ **Temperature**: {temperature}")
+
         # Chat input
         user_query = st.text_area(
             "Ask a question about Belle II physics:",
@@ -217,7 +229,7 @@ def main():
                     try:
                         rag_system = load_rag_system()
                         if rag_system:
-                            # Retrieve relevant documents
+                            # Retrieve relevant documents using selected strategy
                             retrieval_results = rag_system.retrieve(
                                 user_query,
                                 strategy=selected_strategy,
@@ -226,11 +238,12 @@ def main():
                             )
 
                             if retrieval_results:
-                                # Generate answer
+                                # Generate answer using selected model
                                 with st.spinner("🤖 Generating answer..."):
                                     response = rag_system.generate_answer(
                                         user_query,
                                         retrieval_results,
+                                        model_type=selected_model,  # Pass the selected model
                                         temperature=temperature
                                     )
 
@@ -238,7 +251,7 @@ def main():
                                 st.markdown("### 🤖 Answer")
                                 st.markdown(response.answer)
 
-                                # Display confidence
+                                # Display confidence and metadata
                                 confidence_class = get_confidence_class(
                                     response.confidence_score)
                                 st.markdown(f"""
@@ -246,6 +259,7 @@ def main():
                                     <strong>Confidence Score:</strong>
                                     <span class="{confidence_class}">{response.confidence_score:.3f}</span><br>
                                     <strong>Processing Time:</strong> {response.processing_time:.2f}s<br>
+                                    <strong>Model Used:</strong> {response.model_used}<br>
                                     <strong>Sources Used:</strong> {len(response.sources)}<br>
                                     <strong>Chunk Types:</strong> {', '.join(response.chunk_types_used)}
                                 </div>
@@ -257,6 +271,8 @@ def main():
                                     'answer': response.answer,
                                     'confidence': response.confidence_score,
                                     'sources': response.sources,
+                                    'model_used': response.model_used,
+                                    'strategy_used': selected_strategy,
                                     'timestamp': datetime.now()
                                 })
 
@@ -282,6 +298,10 @@ def main():
                 with st.expander(f"Q: {chat['query'][:50]}..."):
                     st.markdown(f"**Answer:** {chat['answer'][:200]}...")
                     st.markdown(f"**Confidence:** {chat['confidence']:.3f}")
+                    st.markdown(
+                        f"**Model:** {chat.get('model_used', 'Unknown')}")
+                    st.markdown(
+                        f"**Strategy:** {chat.get('strategy_used', 'Unknown')}")
                     st.markdown(
                         f"**Time:** {chat['timestamp'].strftime('%H:%M:%S')}")
         else:

@@ -1,0 +1,21 @@
+{
+  "system_name": "Belle II Professional Physics Assistant with Pinecone",
+  "version": "2.1.0",
+  "description": "Advanced RAG system for Belle II physics research using Pinecone",
+  "features": [
+    "Multi-model support (Mistral, Llama-2, Vicuna)",
+    "Advanced retrieval strategies",
+    "Real-time analytics",
+    "Confidence scoring",
+    "Content type analysis",
+    "Pinecone vector database",
+    "Integrated embeddings"
+  ],
+  "document_count": 3,
+  "embedding_model": "BAAI/bge-large-en-v1.5",
+  "default_model": "mistralai/Mistral-7B-Instruct-v0.3",
+  "vector_database": "Pinecone",
+  "index_name": "belle2-advanced",
+  "use_integrated_embeddings": true,
+  "setup_date": "2025-07-20 02:16:04"
+}
