@@ -548,6 +548,9 @@ class AdvancedRAGSystem:
             logger.error(f"Error in generate_answer: {e}")
             logger.error(f"Model type: {model_type}")
             logger.error(f"Model type class: {type(model_type)}")
+            logger.error(f"Full traceback:")
+            import traceback
+            logger.error(traceback.format_exc())
             raise
 
     def _compose_advanced_prompt(self, query: str, retrieval_results: List[RetrievalResult]) -> str:
