@@ -501,37 +501,54 @@ class AdvancedRAGSystem:
                         temperature: float = None) -> RAGResponse:
         """Generate answer using specified model"""
 
-        if model_type is None:
-            model_type = self.default_model
+        try:
+            if model_type is None:
+                model_type = self.default_model
 
-        start_time = time.time()
+            # Debug logging
+            logger.info(f"Generating answer with model_type: {model_type}")
+            logger.info(f"Model_type type: {type(model_type)}")
+            logger.info(
+                f"Model_type value: {model_type.value if hasattr(model_type, 'value') else model_type}")
 
-        # Compose prompt
-        prompt = self._compose_advanced_prompt(query, retrieval_results)
+            start_time = time.time()
 
-        # Get model configuration
-        config = self.model_configs[model_type]
-        if temperature is not None:
-            config = config.copy()
-            config['temperature'] = temperature
+            # Compose prompt
+            prompt = self._compose_advanced_prompt(query, retrieval_results)
 
-        # Generate answer
-        answer = self._query_model(prompt, model_type, config)
+            # Get model configuration
+            if model_type not in self.model_configs:
+                raise ValueError(
+                    f"Unknown model type: {model_type}. Available models: {list(self.model_configs.keys())}")
 
-        # Calculate confidence score
-        confidence_score = self._calculate_confidence(
-            retrieval_results, answer)
+            config = self.model_configs[model_type]
+            if temperature is not None:
+                config = config.copy()
+                config['temperature'] = temperature
 
-        processing_time = time.time() - start_time
+            # Generate answer
+            answer = self._query_model(prompt, model_type, config)
 
-        return RAGResponse(
-            answer=answer,
-            sources=retrieval_results,
-            model_used=model_type.value,
-            processing_time=processing_time,
-            confidence_score=confidence_score,
-            chunk_types_used=list(set(r.chunk_type for r in retrieval_results))
-        )
+            # Calculate confidence score
+            confidence_score = self._calculate_confidence(
+                retrieval_results, answer)
+
+            processing_time = time.time() - start_time
+
+            return RAGResponse(
+                answer=answer,
+                sources=retrieval_results,
+                model_used=model_type.value,
+                processing_time=processing_time,
+                confidence_score=confidence_score,
+                chunk_types_used=list(
+                    set(r.chunk_type for r in retrieval_results))
+            )
+        except Exception as e:
+            logger.error(f"Error in generate_answer: {e}")
+            logger.error(f"Model type: {model_type}")
+            logger.error(f"Model type class: {type(model_type)}")
+            raise
 
     def _compose_advanced_prompt(self, query: str, retrieval_results: List[RetrievalResult]) -> str:
         """Compose advanced prompt with structured context"""
@@ -602,24 +619,29 @@ Please provide a comprehensive, well-structured answer that synthesizes the info
     def _query_model(self, prompt: str, model_type: ModelType, config: Dict[str, Any]) -> str:
         """Query the specified model"""
 
-        api_key = os.getenv("HF_API_KEY")
-        if not api_key:
-            raise ValueError("HF_API_KEY environment variable not set")
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "messages": [{"role": "user", "content": prompt}],
-            "model": model_type.value,
-            "stream": False,
-            "temperature": config["temperature"],
-            "max_tokens": config["max_tokens"]
-        }
-
         try:
+            api_key = os.getenv("HF_API_KEY")
+            if not api_key:
+                raise ValueError("HF_API_KEY environment variable not set")
+
+            # Validate model_type
+            if not isinstance(model_type, ModelType):
+                raise ValueError(
+                    f"Invalid model_type: {model_type}. Expected ModelType enum, got {type(model_type)}")
+
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "messages": [{"role": "user", "content": prompt}],
+                "model": model_type.value,
+                "stream": False,
+                "temperature": config["temperature"],
+                "max_tokens": config["max_tokens"]
+            }
+
             logger.info(f"Querying model: {model_type.value}")
             logger.info(f"Prompt length: {len(prompt)} characters")
             logger.info(f"Temperature: {config['temperature']}")
@@ -646,8 +668,9 @@ Please provide a comprehensive, well-structured answer that synthesizes the info
                 return error_msg
 
         except Exception as e:
-            logger.error(f"Error querying model {model_type.value}: {e}")
-            return f"[Error]: Failed to generate response from {model_type.value}"
+            logger.error(
+                f"Error querying model {model_type.value if hasattr(model_type, 'value') else model_type}: {e}")
+            return f"[Error]: Failed to generate response from {model_type.value if hasattr(model_type, 'value') else model_type}"
 
     def _calculate_confidence(self, retrieval_results: List[RetrievalResult], answer: str) -> float:
         """Calculate confidence score based on retrieval quality and answer coherence"""

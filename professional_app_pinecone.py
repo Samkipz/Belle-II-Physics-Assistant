@@ -215,6 +215,14 @@ def main():
         st.info(
             f"🤖 **Model**: {selected_model_name} | 🔍 **Strategy**: {selected_strategy} | 📊 **Results**: {top_k} | 🌡️ **Temperature**: {temperature}")
 
+        # Debug information (hidden by default)
+        with st.expander("🔧 Debug Info"):
+            st.write(f"Selected model name: {selected_model_name}")
+            st.write(f"Selected model enum: {selected_model}")
+            st.write(f"Selected model type: {type(selected_model)}")
+            st.write(
+                f"Selected model value: {selected_model.value if hasattr(selected_model, 'value') else 'N/A'}")
+
         # Chat input
         user_query = st.text_area(
             "Ask a question about Belle II physics:",
@@ -240,12 +248,21 @@ def main():
                             if retrieval_results:
                                 # Generate answer using selected model
                                 with st.spinner("🤖 Generating answer..."):
-                                    response = rag_system.generate_answer(
-                                        user_query,
-                                        retrieval_results,
-                                        model_type=selected_model,  # Pass the selected model
-                                        temperature=temperature
-                                    )
+                                    try:
+                                        response = rag_system.generate_answer(
+                                            user_query,
+                                            retrieval_results,
+                                            model_type=selected_model,  # Pass the selected model
+                                            temperature=temperature
+                                        )
+                                    except Exception as model_error:
+                                        st.error(
+                                            f"Model generation error: {str(model_error)}")
+                                        st.error(
+                                            f"Model type: {selected_model}")
+                                        st.error(
+                                            f"Model type class: {type(selected_model)}")
+                                        return
 
                                 # Display answer
                                 st.markdown("### 🤖 Answer")
