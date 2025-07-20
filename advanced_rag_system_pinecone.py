@@ -578,24 +578,24 @@ class AdvancedRAGSystem:
 
         context = "\n\n".join(context_parts)
 
-        prompt = f"""You are an expert Belle II physics assistant with access to comprehensive scientific documentation. Answer the user's question using ONLY the information provided in the context below.
+        prompt = f"""You are an expert Belle II physics assistant. Your task is to provide a comprehensive answer to the user's question based on the scientific documentation provided below.
 
-IMPORTANT INSTRUCTIONS:
-1. Base your answer EXCLUSIVELY on the provided context
-2. If the context doesn't contain enough information, clearly state what information is missing
-3. Do not add any external knowledge or make assumptions
-4. Be precise and scientific in your response
-5. Reference specific sources when possible (document names, page numbers)
-6. If you see equations, explain them clearly
-7. If you see tables, interpret the data accurately
-8. If you see figures, describe what they show
+CRITICAL INSTRUCTIONS:
+1. DO NOT copy text directly from the context. Instead, synthesize and explain the information in your own words.
+2. Base your answer EXCLUSIVELY on the provided context - do not use external knowledge.
+3. If the context doesn't contain enough information, clearly state what information is missing.
+4. Be precise, scientific, and well-structured in your response.
+5. When referencing information, mention the source document and page number.
+6. If you see equations, explain their meaning and significance.
+7. If you see tables, interpret the data and explain its relevance.
+8. If you see figures, describe what they show and their importance.
 
-CONTEXT:
+CONTEXT INFORMATION:
 {context}
 
 USER QUESTION: {query}
 
-Please provide a comprehensive, accurate answer based on the context above:"""
+Please provide a comprehensive, well-structured answer that synthesizes the information from the context above. Write in a clear, scientific style that would be appropriate for a physics researcher:"""
 
         return prompt
 
@@ -620,15 +620,30 @@ Please provide a comprehensive, accurate answer based on the context above:"""
         }
 
         try:
+            logger.info(f"Querying model: {model_type.value}")
+            logger.info(f"Prompt length: {len(prompt)} characters")
+            logger.info(f"Temperature: {config['temperature']}")
+            logger.info(f"Max tokens: {config['max_tokens']}")
+
             response = requests.post(
                 config["api_url"], headers=headers, json=payload)
             response.raise_for_status()
             result = response.json()
 
+            logger.info(f"Model response status: {response.status_code}")
+            logger.info(f"Response keys: {list(result.keys())}")
+
             if "choices" in result and len(result["choices"]) > 0:
-                return result["choices"][0]["message"]["content"]
+                model_response = result["choices"][0]["message"]["content"]
+                logger.info(
+                    f"Model response length: {len(model_response)} characters")
+                logger.info(
+                    f"Model response preview: {model_response[:200]}...")
+                return model_response
             else:
-                return f"[Error from model API]: {result}"
+                error_msg = f"[Error from model API]: {result}"
+                logger.error(error_msg)
+                return error_msg
 
         except Exception as e:
             logger.error(f"Error querying model {model_type.value}: {e}")
