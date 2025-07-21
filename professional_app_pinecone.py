@@ -271,7 +271,6 @@ def main():
             stats = st.session_state.system_stats
             if 'error' not in stats:
                 st.metric("Total Chunks", f"{stats.get('total_chunks', 0):,}")
-                st.metric("Documents", stats.get('unique_documents', 0))
                 st.metric("Index", stats.get('index_name', 'Unknown'))
             else:
                 st.error(f"Error loading stats: {stats['error']}")
@@ -336,9 +335,8 @@ def main():
                                             response = rag_system.generate_answer(
                                                 user_query,
                                                 retrieval_results,
-                                                model_type=selected_model,  # Pass the selected model string
-                                                temperature=temperature,
-                                                provider=selected_provider  # Pass the selected provider
+                                                model_type=selected_model,
+                                                temperature=temperature
                                             )
                                         except Exception as model_error:
                                             st.error(
