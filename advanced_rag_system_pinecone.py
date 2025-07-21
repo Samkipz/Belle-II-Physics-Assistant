@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 import hashlib
 from enum import Enum
+from llm_provider import call_llm, get_llm_config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -498,47 +499,36 @@ class AdvancedRAGSystem:
                         query: str,
                         retrieval_results: List[RetrievalResult],
                         model_type: ModelType = None,
-                        temperature: float = None) -> RAGResponse:
-        """Generate answer using specified model"""
-
+                        temperature: float = None,
+                        provider: str = None) -> RAGResponse:
+        """Generate answer using specified model/provider"""
         try:
             if model_type is None:
                 model_type = self.default_model
-
+            model_name = model_type.value if hasattr(
+                model_type, 'value') else str(model_type)
             # Debug logging
-            logger.info(f"Generating answer with model_type: {model_type}")
-            logger.info(f"Model_type type: {type(model_type)}")
             logger.info(
-                f"Model_type value: {model_type.value if hasattr(model_type, 'value') else model_type}")
-
+                f"Generating answer with model: {model_name}, provider: {provider}")
             start_time = time.time()
-
             # Compose prompt
             prompt = self._compose_advanced_prompt(query, retrieval_results)
-
-            # Get model configuration
-            if model_type not in self.model_configs:
-                raise ValueError(
-                    f"Unknown model type: {model_type}. Available models: {list(self.model_configs.keys())}")
-
-            config = self.model_configs[model_type]
-            if temperature is not None:
-                config = config.copy()
-                config['temperature'] = temperature
-
-            # Generate answer
-            answer = self._query_model(prompt, model_type, config)
-
+            # Use call_llm for provider/model agnostic LLM call
+            answer = call_llm(
+                prompt,
+                model=model_name,
+                provider=provider,
+                temperature=temperature if temperature is not None else 0.1,
+                max_tokens=1500
+            )
             # Calculate confidence score
             confidence_score = self._calculate_confidence(
                 retrieval_results, answer)
-
             processing_time = time.time() - start_time
-
             return RAGResponse(
                 answer=answer,
                 sources=retrieval_results,
-                model_used=model_type.value,
+                model_used=model_name,
                 processing_time=processing_time,
                 confidence_score=confidence_score,
                 chunk_types_used=list(
@@ -546,9 +536,8 @@ class AdvancedRAGSystem:
             )
         except Exception as e:
             logger.error(f"Error in generate_answer: {e}")
-            logger.error(f"Model type: {model_type}")
-            logger.error(f"Model type class: {type(model_type)}")
-            logger.error(f"Full traceback:")
+            logger.error(f"Model: {model_type}")
+            logger.error(f"Provider: {provider}")
             import traceback
             logger.error(traceback.format_exc())
             raise
@@ -618,62 +607,6 @@ USER QUESTION: {query}
 Please provide a comprehensive, well-structured answer that synthesizes the information from the context above. Write in a clear, scientific style that would be appropriate for a physics researcher:"""
 
         return prompt
-
-    def _query_model(self, prompt: str, model_type: ModelType, config: Dict[str, Any]) -> str:
-        """Query the specified model"""
-
-        try:
-            api_key = os.getenv("HF_API_KEY")
-            if not api_key:
-                raise ValueError("HF_API_KEY environment variable not set")
-
-            # Validate model_type
-            if not isinstance(model_type, ModelType):
-                raise ValueError(
-                    f"Invalid model_type: {model_type}. Expected ModelType enum, got {type(model_type)}")
-
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-
-            payload = {
-                "messages": [{"role": "user", "content": prompt}],
-                "model": model_type.value,
-                "stream": False,
-                "temperature": config["temperature"],
-                "max_tokens": config["max_tokens"]
-            }
-
-            logger.info(f"Querying model: {model_type.value}")
-            logger.info(f"Prompt length: {len(prompt)} characters")
-            logger.info(f"Temperature: {config['temperature']}")
-            logger.info(f"Max tokens: {config['max_tokens']}")
-
-            response = requests.post(
-                config["api_url"], headers=headers, json=payload)
-            response.raise_for_status()
-            result = response.json()
-
-            logger.info(f"Model response status: {response.status_code}")
-            logger.info(f"Response keys: {list(result.keys())}")
-
-            if "choices" in result and len(result["choices"]) > 0:
-                model_response = result["choices"][0]["message"]["content"]
-                logger.info(
-                    f"Model response length: {len(model_response)} characters")
-                logger.info(
-                    f"Model response preview: {model_response[:200]}...")
-                return model_response
-            else:
-                error_msg = f"[Error from model API]: {result}"
-                logger.error(error_msg)
-                return error_msg
-
-        except Exception as e:
-            logger.error(
-                f"Error querying model {model_type.value if hasattr(model_type, 'value') else model_type}: {e}")
-            return f"[Error]: Failed to generate response from {model_type.value if hasattr(model_type, 'value') else model_type}"
 
     def _calculate_confidence(self, retrieval_results: List[RetrievalResult], answer: str) -> float:
         """Calculate confidence score based on retrieval quality and answer coherence"""

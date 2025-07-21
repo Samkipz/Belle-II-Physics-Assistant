@@ -1,3 +1,5 @@
+from llm_provider import get_llm_config
+from advanced_rag_system_pinecone import ModelType
 from typing import Dict, Any
 import pinecone
 import streamlit as st
@@ -10,13 +12,18 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
+from dotenv import load_dotenv
+import re
+from difflib import SequenceMatcher
+import numpy as np
+from sentence_transformers import SentenceTransformer
+load_dotenv()
 
 # Import the ModelType enum from the RAG system
-from advanced_rag_system_pinecone import ModelType
 
 # Page configuration
 st.set_page_config(
-    page_title="Belle II Professional Physics Assistant",
+    page_title="Belle II Physics Assistant",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -80,6 +87,47 @@ def load_rag_system():
             return None
 
 
+@st.cache_resource
+def load_qa_corpus(path="qa_sample.jsonl"):
+    qa_pairs = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            qa_pairs.append(json.loads(line))
+    return qa_pairs
+
+
+@st.cache_resource
+def load_qa_corpus_with_embeddings(path="belle2_qa_corpus_embedded.jsonl"):
+    qa_pairs = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            qa = json.loads(line)
+            qa["embedding"] = np.array(qa["embedding"])
+            qa_pairs.append(qa)
+    return qa_pairs
+
+
+@st.cache_resource
+def get_embedder():
+    return SentenceTransformer("BAAI/bge-large-en-v1.5")
+
+
+def find_best_qa(query, qa_pairs):
+    def score(q):
+        return SequenceMatcher(None, query.lower(), q["question"].lower()).ratio()
+    best = max(qa_pairs, key=score)
+    return best
+
+
+def find_top_n_qa_semantic(query, qa_pairs, n=3):
+    embedder = get_embedder()
+    query_emb = embedder.encode(query)
+    sims = [np.dot(query_emb, qa["embedding"]) / (np.linalg.norm(query_emb)
+                                                  * np.linalg.norm(qa["embedding"])) for qa in qa_pairs]
+    top_indices = np.argsort(sims)[::-1][:n]
+    return [qa_pairs[i] for i in top_indices], [sims[i] for i in top_indices]
+
+
 def get_confidence_class(confidence):
     """Get CSS class for confidence score"""
     if confidence >= 0.7:
@@ -90,38 +138,17 @@ def get_confidence_class(confidence):
         return "confidence-low"
 
 
-def display_source_card(source):
-    """Display a source card with metadata"""
-    with st.container():
-        st.markdown(f"""
-        <div class="source-card">
-            <strong>📄 {source.document}</strong> (Page {source.page_number})<br>
-            <small>Type: {source.chunk_type} | Score: {source.similarity_score:.3f}</small><br>
-            <details>
-                <summary>View Content</summary>
-                <pre style="font-size: 0.8rem; white-space: pre-wrap;">{source.content[:300]}{'...' if len(source.content) > 300 else ''}</pre>
-            </details>
-        </div>
-        """, unsafe_allow_html=True)
-
-
 def create_analytics_dashboard(stats):
     """Create analytics dashboard"""
     st.markdown("### 📊 System Analytics")
 
     # Create metrics row
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
 
     with col1:
-        st.metric("Total Chunks", f"{stats.get('total_chunks', 0):,}")
-
-    with col2:
-        st.metric("Documents", stats.get('unique_documents', 0))
-
-    with col3:
         st.metric("Embedding Model", stats.get('embedding_model', 'Unknown'))
 
-    with col4:
+    with col2:
         st.metric("Index Name", stats.get('index_name', 'Unknown'))
 
     # Chunk type distribution
@@ -136,21 +163,65 @@ def create_analytics_dashboard(stats):
         st.plotly_chart(fig, use_container_width=True)
 
 
+def render_chunk(chunk):
+    if chunk['chunk_type'] == 'equation':
+        st.latex(chunk.get('metadata', {}).get(
+            'equation_latex', chunk['content']))
+    elif chunk['chunk_type'] == 'table':
+        st.markdown(chunk.get('metadata', {}).get(
+            'table_markdown', chunk['content']))
+    elif chunk['chunk_type'] == 'figure':
+        fig_path = chunk.get('metadata', {}).get('figure_path')
+        if fig_path:
+            st.image(fig_path)
+        st.caption(chunk.get('metadata', {}).get('figure_caption', ''))
+    else:
+        st.markdown(chunk['content'])
+
+
+def render_answer(answer):
+    # Render LaTeX blocks in answer
+    latex_blocks = re.findall(r'\$\$(.*?)\$\$', answer, re.DOTALL)
+    for block in latex_blocks:
+        st.latex(block.strip())
+        answer = answer.replace(f'$$ {block} $$', '')
+    # Render Markdown (including tables)
+    st.markdown(answer, unsafe_allow_html=True)
+
+
 def main():
     # Header
     st.markdown('<h1 class="main-header">🔬 Belle II Professional Physics Assistant</h1>',
                 unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Advanced RAG System with Pinecone Vector Database</p>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Advanced RAG System with Vector Database</p>', unsafe_allow_html=True)
 
     # Sidebar
     with st.sidebar:
         st.markdown("### ⚙️ Configuration")
 
-        # Model selection with proper mapping to ModelType enum
+        # Retrieval mode toggle
+        retrieval_mode = st.radio(
+            "Retrieval Mode",
+            ["Synthesized Answer (RAG)", "Direct Q&A"],
+            index=0
+        )
+
+        # Remove provider selection from sidebar
+        # provider_options = ["openrouter", "huggingface"]
+        # selected_provider = st.selectbox(
+        #     "Select Provider",
+        #     provider_options,
+        #     index=0,
+        #     help="Choose the LLM provider (OpenRouter, HuggingFace, etc.)"
+        # )
+        selected_provider = None  # Use backend/default provider
+
+        # Model selection with proper mapping to ModelType enum or string
         model_options = {
-            "Mistral-7B": ModelType.MISTRAL_7B,
-            "Llama-2-7B": ModelType.LLAMA_2,
-            "Vicuna-7B": ModelType.VICUNA
+            "Mistral-7B": "mistralai/Mistral-7B-Instruct-v0.3",
+            "Mixtral-8x7B": "mistralai/mixtral-8x7b-instruct",
+            # "Llama-2-7B": "meta-llama/Llama-2-7b-chat-hf",
+            # "Vicuna-7B": "lmsys/vicuna-7b-v1.5"
         }
         selected_model_name = st.selectbox(
             "Select Model",
@@ -208,20 +279,22 @@ def main():
     # Main content area
     col1, col2 = st.columns([2, 1])
 
+    # Load Q&A corpus (sample)
+    qa_pairs = load_qa_corpus_with_embeddings()
+
     with col1:
-        st.markdown("### 💬 Chat Interface")
+        st.markdown("### �� Chat Interface")
 
         # Display current configuration
         st.info(
             f"🤖 **Model**: {selected_model_name} | 🔍 **Strategy**: {selected_strategy} | 📊 **Results**: {top_k} | 🌡️ **Temperature**: {temperature}")
 
-        # Debug information (hidden by default)
-        with st.expander("🔧 Debug Info"):
-            st.write(f"Selected model name: {selected_model_name}")
-            st.write(f"Selected model enum: {selected_model}")
-            st.write(f"Selected model type: {type(selected_model)}")
-            st.write(
-                f"Selected model value: {selected_model.value if hasattr(selected_model, 'value') else 'N/A'}")
+        # Remove debug info expander from main UI
+        # with st.expander("🔧 Debug Info"):
+        #     st.write(f"Selected model name: {selected_model_name}")
+        #     st.write(f"Selected model enum: {selected_model}")
+        #     st.write(f"Selected model type: {type(selected_model)}")
+        #     st.write(f"Selected model value: {selected_model.value if hasattr(selected_model, 'value') else 'N/A'}")
 
         # Chat input
         user_query = st.text_area(
@@ -233,77 +306,97 @@ def main():
         # Query button
         if st.button("🔍 Query Knowledge Base", type="primary"):
             if user_query.strip():
-                with st.spinner("🔍 Searching knowledge base..."):
-                    try:
-                        rag_system = load_rag_system()
-                        if rag_system:
-                            # Retrieve relevant documents using selected strategy
-                            retrieval_results = rag_system.retrieve(
-                                user_query,
-                                strategy=selected_strategy,
-                                top_k=top_k,
-                                chunk_type_filter=chunk_type_filter
-                            )
+                if retrieval_mode == "Direct Q&A":
+                    top_qa, scores = find_top_n_qa_semantic(
+                        user_query, qa_pairs, n=3)
+                    for i, (qa, score) in enumerate(zip(top_qa, scores)):
+                        st.markdown(
+                            f"### 🤖 Q&A Match #{i+1} (Score: {score:.2f})")
+                        st.markdown(f"**Q:** {qa['question']}")
+                        render_answer(qa['answer'])
+                        st.markdown(
+                            f"**Source:** {qa.get('source', 'N/A')} | Page: {qa.get('page', 'N/A')} | Type: {qa.get('chunk_type', 'N/A')}")
+                else:
+                    with st.spinner("🔍 Searching knowledge base..."):
+                        try:
+                            rag_system = load_rag_system()
+                            if rag_system:
+                                # Retrieve relevant documents using selected strategy
+                                retrieval_results = rag_system.retrieve(
+                                    user_query,
+                                    strategy=selected_strategy,
+                                    top_k=top_k,
+                                    chunk_type_filter=chunk_type_filter
+                                )
 
-                            if retrieval_results:
-                                # Generate answer using selected model
-                                with st.spinner("🤖 Generating answer..."):
-                                    try:
-                                        response = rag_system.generate_answer(
-                                            user_query,
-                                            retrieval_results,
-                                            model_type=selected_model,  # Pass the selected model
-                                            temperature=temperature
-                                        )
-                                    except Exception as model_error:
-                                        st.error(
-                                            f"Model generation error: {str(model_error)}")
-                                        st.error(
-                                            f"Model type: {selected_model}")
-                                        st.error(
-                                            f"Model type class: {type(selected_model)}")
-                                        return
+                                if retrieval_results:
+                                    # Generate answer using selected model/provider
+                                    with st.spinner("🤖 Generating answer..."):
+                                        try:
+                                            response = rag_system.generate_answer(
+                                                user_query,
+                                                retrieval_results,
+                                                model_type=selected_model,  # Pass the selected model string
+                                                temperature=temperature,
+                                                provider=selected_provider  # Pass the selected provider
+                                            )
+                                        except Exception as model_error:
+                                            st.error(
+                                                f"Model generation error: {str(model_error)}")
+                                            st.error(
+                                                f"Model: {selected_model}")
+                                            st.error(
+                                                f"Provider: {selected_provider}")
+                                            return
 
-                                # Display answer
-                                st.markdown("### 🤖 Answer")
-                                st.markdown(response.answer)
+                                    # Display answer
+                                    st.markdown("### 🤖 Answer")
+                                    render_answer(response.answer)
 
-                                # Display confidence and metadata
-                                confidence_class = get_confidence_class(
-                                    response.confidence_score)
-                                st.markdown(f"""
-                                <div class="metric-card">
-                                    <strong>Confidence Score:</strong>
-                                    <span class="{confidence_class}">{response.confidence_score:.3f}</span><br>
-                                    <strong>Processing Time:</strong> {response.processing_time:.2f}s<br>
-                                    <strong>Model Used:</strong> {response.model_used}<br>
-                                    <strong>Sources Used:</strong> {len(response.sources)}<br>
-                                    <strong>Chunk Types:</strong> {', '.join(response.chunk_types_used)}
-                                </div>
-                                """, unsafe_allow_html=True)
+                                    # Display confidence and metadata
+                                    confidence_class = get_confidence_class(
+                                        response.confidence_score)
+                                    st.markdown(f"""
+                                    <div class="metric-card">
+                                        <strong>Confidence Score:</strong>
+                                        <span class="{confidence_class}">{response.confidence_score:.3f}</span><br>
+                                        <strong>Processing Time:</strong> {response.processing_time:.2f}s<br>
+                                        <strong>Model Used:</strong> {response.model_used}<br>
+                                        <strong>Sources Used:</strong> {len(response.sources)}<br>
+                                        <strong>Chunk Types:</strong> {', '.join(response.chunk_types_used)}
+                                    </div>
+                                    """, unsafe_allow_html=True)
 
-                                # Add to chat history
-                                st.session_state.chat_history.append({
-                                    'query': user_query,
-                                    'answer': response.answer,
-                                    'confidence': response.confidence_score,
-                                    'sources': response.sources,
-                                    'model_used': response.model_used,
-                                    'strategy_used': selected_strategy,
-                                    'timestamp': datetime.now()
-                                })
+                                    # Add to chat history
+                                    st.session_state.chat_history.append({
+                                        'query': user_query,
+                                        'answer': response.answer,
+                                        'confidence': response.confidence_score,
+                                        'sources': response.sources,
+                                        'model_used': response.model_used,
+                                        'strategy_used': selected_strategy,
+                                        'timestamp': datetime.now()
+                                    })
 
-                                # Display sources
-                                st.markdown("### 📚 Sources")
-                                for source in response.sources:
-                                    display_source_card(source)
-                            else:
-                                st.warning(
-                                    "No relevant documents found for your query.")
-                        else:
-                            st.error("Failed to load RAG system.")
-                    except Exception as e:
-                        st.error(f"Error processing query: {e}")
+                                    # Display sources
+                                    st.markdown("### 📚 Sources")
+                                    for i, source in enumerate(response.sources):
+                                        src = source.__dict__ if hasattr(
+                                            source, '__dict__') else source
+                                        doc = src.get('document', 'N/A')
+                                        content = src.get('content', '')
+                                        st.markdown(f'''
+<div class="source-card">
+    <strong>Source {i+1}:</strong><br>
+    <strong>Document:</strong> {doc}<br>
+    <strong>Excerpt:</strong> {content[:300]}{'...' if len(content) > 300 else ''}
+</div>
+''', unsafe_allow_html=True)
+                                else:
+                                    st.warning(
+                                        "No relevant documents found for your query.")
+                        except Exception as e:
+                            st.error(f"Error processing query: {e}")
             else:
                 st.warning("Please enter a question.")
 

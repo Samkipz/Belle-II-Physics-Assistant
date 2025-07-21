@@ -182,7 +182,7 @@ def create_launch_scripts():
     with open("run_professional_pinecone.bat", "w") as f:
         f.write("@echo off\n")
         f.write(
-            "echo Starting Belle II Professional Physics Assistant with Pinecone...\n")
+            "echo Starting Belle II Professional Physics Assistant...\n")
         f.write("streamlit run professional_app_pinecone.py\n")
         f.write("pause\n")
 
@@ -190,7 +190,7 @@ def create_launch_scripts():
     with open("run_professional_pinecone.sh", "w") as f:
         f.write("#!/bin/bash\n")
         f.write(
-            "echo 'Starting Belle II Professional Physics Assistant with Pinecone...'\n")
+            "echo 'Starting ...'\n")
         f.write("streamlit run professional_app_pinecone.py\n")
 
     # Make shell script executable
@@ -206,7 +206,7 @@ def create_config_file():
     print("\n⚙️ Creating configuration file...")
 
     config = {
-        "system_name": "Belle II Professional Physics Assistant with Pinecone",
+        "system_name": "Belle II Professional Physics Assistant",
         "version": "2.1.0",
         "description": "Advanced RAG system for Belle II physics research using Pinecone",
         "features": [
@@ -235,7 +235,7 @@ def create_config_file():
 
 def main():
     """Main setup function"""
-    print("🚀 Belle II Professional Physics Assistant Setup with Pinecone")
+    print("🚀 Belle II Professional Physics Assistant")
     print("=" * 60)
 
     # Check requirements

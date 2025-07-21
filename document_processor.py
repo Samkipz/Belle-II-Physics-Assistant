@@ -136,122 +136,53 @@ class ScientificDocumentProcessor:
 
         return final_chunks
 
-    def _extract_tables(self, page, page_num: int) -> List[DocumentChunk]:
-        """Extract tables from the page"""
-        tables = page.find_tables()
-        chunks = []
-
-        for i, table in enumerate(tables):
-            try:
-                # Convert table to structured format
-                table_data = table.extract()
-                table_df = pd.DataFrame(table_data[1:], columns=table_data[0])
-
-                # Create table description
-                table_description = self._describe_table(table_df)
-
-                chunk_id = f"table_{page_num}_{i}_{hashlib.md5(table_description.encode()).hexdigest()[:8]}"
-
-                # Only keep primitive metadata (remove 'table_data')
-                chunks.append(DocumentChunk(
-                    content=table_description,
-                    chunk_id=chunk_id,
-                    page_number=page_num,
-                    chunk_type="table",
-                    metadata={
-                        "source_page": page_num,
-                        "table_index": i,
-                        "rows": len(table_df),
-                        "columns": len(table_df.columns)
-                        # 'table_data' removed to ensure all metadata values are primitives
-                    }
-                ))
-            except Exception as e:
-                logger.warning(
-                    f"Failed to extract table {i} on page {page_num}: {e}")
-
-        return chunks
-
-    def _describe_table(self, df: pd.DataFrame) -> str:
-        """Generate a natural language description of the table"""
-        description = f"Table with {len(df)} rows and {len(df.columns)} columns. "
-        description += f"Columns: {', '.join(df.columns)}. "
-
-        # Add sample data
-        if len(df) > 0:
-            sample_row = df.iloc[0].to_dict()
-            description += f"Sample data: {sample_row}"
-
-        return description
-
-    def _extract_equations(self, page, page_num: int) -> List[DocumentChunk]:
-        """Extract equations from the page"""
-        # Look for LaTeX-style equations
+    def _extract_equations(self, page, page_num):
         text = page.get_text()
-        equation_patterns = [
-            r'\$[^$]+\$',  # Inline equations
-            r'\$\$[^$]+\$\$',  # Display equations
-            # Equation environments
-            r'\\begin\{equation\}.*?\\end\{equation\}',
-        ]
-
+        equations = re.findall(r'\$\$(.*?)\$\$', text, re.DOTALL)
         chunks = []
-        for pattern in equation_patterns:
-            equations = re.findall(pattern, text, re.DOTALL)
-            for i, eq in enumerate(equations):
-                chunk_id = f"equation_{page_num}_{i}_{hashlib.md5(eq.encode()).hexdigest()[:8]}"
-
-                chunks.append(DocumentChunk(
-                    content=f"Equation: {eq}",
-                    chunk_id=chunk_id,
-                    page_number=page_num,
-                    chunk_type="equation",
-                    metadata={
-                        "source_page": page_num,
-                        "equation_index": i,
-                        "equation_type": "latex",
-                        "raw_equation": eq
-                    }
-                ))
-
+        for i, eq in enumerate(equations):
+            chunks.append(DocumentChunk(
+                content=eq.strip(),
+                chunk_id=f"eq_{page_num}_{i}",
+                page_number=page_num,
+                chunk_type="equation",
+                metadata={"equation_latex": f"$$ {eq.strip()} $$"}
+            ))
         return chunks
 
-    def _extract_figures(self, page, page_num: int) -> List[DocumentChunk]:
-        """Extract figures and their captions"""
-        # Get image list
-        image_list = page.get_images()
+    def _extract_tables(self, page, page_num):
+        # Placeholder: use your table extraction model or fallback logic
+        tables = []  # Fill with your extraction logic
+        # Example: tables = self.table_extractor(...)
         chunks = []
+        for i, table_md in enumerate(tables):
+            chunks.append(DocumentChunk(
+                content=table_md,
+                chunk_id=f"table_{page_num}_{i}",
+                page_number=page_num,
+                chunk_type="table",
+                metadata={"table_markdown": table_md}
+            ))
+        return chunks
 
-        for i, img in enumerate(image_list):
-            try:
-                # Get image
-                xref = img[0]
-                pix = fitz.Pixmap(page.parent, xref)
-
-                # Look for caption near the image
-                caption = self._find_figure_caption(page, img)
-
-                chunk_id = f"figure_{page_num}_{i}_{hashlib.md5(caption.encode()).hexdigest()[:8]}"
-
-                chunks.append(DocumentChunk(
-                    content=f"Figure: {caption}",
-                    chunk_id=chunk_id,
-                    page_number=page_num,
-                    chunk_type="figure",
-                    metadata={
-                        "source_page": page_num,
-                        "figure_index": i,
-                        "caption": caption,
-                        "image_width": pix.width,
-                        "image_height": pix.height
-                    }
-                ))
-
-                pix = None  # Free memory
-            except Exception as e:
-                logger.warning(
-                    f"Failed to extract figure {i} on page {page_num}: {e}")
-
+    def _extract_figures(self, page, page_num):
+        images = page.get_images(full=True)
+        chunks = []
+        for i, img in enumerate(images):
+            xref = img[0]
+            base_image = page.parent.extract_image(xref)
+            image_bytes = base_image["image"]
+            image_path = f"processed_docs/fig_{page_num}_{i}.png"
+            with open(image_path, "wb") as img_file:
+                img_file.write(image_bytes)
+            caption = "Figure caption extraction logic here"
+            chunks.append(DocumentChunk(
+                content=caption,
+                chunk_id=f"fig_{page_num}_{i}",
+                page_number=page_num,
+                chunk_type="figure",
+                metadata={"figure_path": image_path, "figure_caption": caption}
+            ))
         return chunks
 
     def _find_figure_caption(self, page, img) -> str:

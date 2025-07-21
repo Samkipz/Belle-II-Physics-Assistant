@@ -1,5 +1,5 @@
 {
-  "system_name": "Belle II Professional Physics Assistant with Pinecone",
+  "system_name": "Belle II Professional Physics Assistant",
   "version": "2.1.0",
   "description": "Advanced RAG system for Belle II physics research using Pinecone",
   "features": [
