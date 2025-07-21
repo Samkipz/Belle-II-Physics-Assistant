@@ -23,6 +23,7 @@ class ModelType(Enum):
     LLAMA_2 = "meta-llama/Llama-2-7b-chat-hf"
     VICUNA = "lmsys/vicuna-7b-v1.5"
     GROK_1 = "xai-org/grok-1"  # Placeholder for future integration
+    MIXTRAL_8X7B = "mistralai/mixtral-8x7b-instruct"
 
 
 @dataclass
@@ -96,6 +97,12 @@ class AdvancedRAGSystem:
                 "temperature": 0.1,
                 "max_tokens": 1500,
                 "context_window": 4096
+            },
+            ModelType.MIXTRAL_8X7B: {
+                "api_url": "https://router.huggingface.co/v1/chat/completions",
+                "temperature": 0.1,
+                "max_tokens": 1500,
+                "context_window": 32768
             }
         }
 
